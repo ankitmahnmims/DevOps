@@ -1,0 +1,66 @@
+STEP 1:
+# install the utilities
+sudo apt-get install -y gnupg curl
+
+#Use cURL and GnuPG to Import the MongoDB public GPG key to retrieve the installation package:
+curl -fsSL https://pgp.mongodb.com/server-7.0.asc | sudo gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
+
+#install mongo 7.0
+echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse"
+| sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list
+
+#refresh APT repo
+sudo apt-get update
+
+#install
+sudo apt-get install -y mongodb-org
+
+
+#start your service
+sudo systemctl start mongod
+sudo systemctl daemon-reload
+sudo systemctl enable mongod
+
+STEP 2: configure the mongodb
+
+#This is the configuraton file to make changes in the config.
+sudo vi /etc/mongod.conf
+
+# following are some configuration blocks
+#location of log file in the system
+systemLog:
+  destination: file
+  logAppend: true
+  path: /var/log/mongodb/mongod.log
+
+
+#port and server configuration to connect
+net:
+   port: 27017
+   bindIp: 0.0.0.0
+
+# enable security enable
+security:
+  authorization: enabled
+
+
+STEP 3: Database and user creation:
+
+# login as admin
+mongosh --port 27017  --authenticationDatabase "admin" -u "myUserAdmin" -p
+Note: This step is required when you have enabled the security in mongo.conf file.
+
+# create additional user and database
+
+use test
+db.createUser(
+  {
+    user: "myTester",
+    pwd:  passwordPrompt(),   // or cleartext password
+    roles: [ { role: "readWrite", db: "test" },
+             { role: "read", db: "reporting" } ]
+  }
+)
+
+Note: The following operation adds a user myTester to the test database who has the readWrite role in the test database
+as well as the read role in the reporting database.
