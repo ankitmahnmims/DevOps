@@ -1,0 +1,151 @@
+1) Configuring ArgoCD with GKE
+
+    Prerequisite:
+        a. GKE cluster
+        b. IAM permissions
+
+    1.1 Installation of ArgoCD:
+        kubectl create namespace argocd
+        kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+
+    1.2 Download and Install ArgoCD CLI:
+        curl -sSL -o argocd-linux-amd64 https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+        sudo install -m 555 argocd-linux-amd64 /usr/local/bin/argocd
+        rm argocd-linux-amd64
+
+    1.3 Access the ArgoCD API server:
+    By default the ArgoCD API server is exposed as a ClusterIP service type. We can access it by Port Forwarding without exposing the service.
+
+        kubectl port-forward svc/argocd-server -n argocd 8080:443 --address 0.0.0.0
+
+        ( you can access argocd on <public-ip-address>:8080 )
+
+    1.4 Get the admin password:
+        kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath=”{.data.password}”
+
+        This will give the output in base64 encoded format. You have to decode it first.
+
+===================================
+
+2) GKE Ingress Configuration
+
+    2.1 Disable internal TLS (Transport Layer Security):
+    To disable internal TLS, we need to pass the --insecure flag to the argocd-server command, this will avoid an internal redirection loop from HTTP to HTTPS. For this, we need to edit the deployment named “argocd-server” and make the following changes
+
+    containers:
+    - command:
+      - argocd-server
+      - --insecure  (changed)
+
+    Now server will not redirect it to HTTPS
+
+    or
+
+    We can set server.insecure: “true” in the “argocd-cmd-params-cm” ConfigMap as shown below:
+
+    data:
+        server.insecure: "true"
+
+    2.2 Create an externally accessible service:
+        We need to create an externally accessible service which will be a ClusterIP service type and have annotation as (Network Endpoint Group) NEG that will allow your load balancer to send traffic directly to your pods without the kube-proxy being used.
+
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: argocd-server-svc
+          namespace: argocd
+          annotations:
+            cloud.google.com/neg: '{"ingress": true}'
+            cloud.google.com/backend-config: '{"ports": {"http":"argocd-backend-config"}}'
+        spec:
+          type: ClusterIP
+          ports:
+          - name: http
+            port: 80
+            protocol: TCP
+            targetPort: 8080
+          selector:
+            app.kubernetes.io/name: argocd-server
+
+    2.3 Create BackendConfig:
+
+        Create Backend Config which is being referenced in external service to perform health checks.
+
+        apiVersion: cloud.google.com/v1
+        kind: BackendConfig
+        metadata:
+          name: argocd-backend-config
+          namespace: argocd
+        spec:
+          healthCheck:
+            checkIntervalSec: 30
+            timeoutSec: 5
+            healthyThreshold: 1
+            unhealthyThreshold: 2
+            type: HTTP
+            requestPath: /healthz
+            port: 8080
+
+    2.4 Create FrontendConfig:
+
+        Now we will create Frontend Config that will redirect HTTP to HTTPS.
+
+        apiVersion: networking.gke.io/v1beta1
+        kind: FrontendConfig
+        metadata:
+          name: argocd-frontend-config
+          namespace: argocd
+        spec:
+          redirectToHttps:
+            enabled: true
+
+
+    2.5 Create Global Static IP:
+
+        gcloud compute addresses create argocd-ingress-ip-address  --global --ip-version IPV4
+
+
+    2.6 Create ManagedCertificate:
+
+        Here we will be creating Managed SSL certificate which will be used in the Load balancer
+
+        apiVersion: networking.gke.io/v1
+        kind: ManagedCertificate
+        metadata:
+          name: argocd-cert
+          namespace: argocd
+        spec:
+          domains:
+            - argocd.xyz.com
+
+
+    2.7 Create Ingress:
+
+        Finally, we will be creating an Ingress object which is having reference to our frontend config, service, and managed certificate.
+
+        apiVersion: networking.k8s.io/v1
+        kind: Ingress
+        metadata:
+          name: argocd-ingress
+          namespace: argocd
+          annotations:
+            kubernetes.io/ingress.global-static-ip-name: argocd-ingress-ip-address
+            networking.gke.io/managed-certificates: argocd-cert
+            networking.gke.io/v1beta1.FrontendConfig: argocd-frontend-config
+        spec:
+          rules:
+            - host: argocd.xyz.com
+              http:
+                paths:
+                  - path: /
+                    pathType: Prefix
+                    backend:
+                      service:
+                        name: argocd-server-svc
+                        port:
+                          number: 80
+
+
+
+
+
