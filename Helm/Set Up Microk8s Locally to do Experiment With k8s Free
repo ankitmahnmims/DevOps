@@ -1,0 +1,46 @@
+1. Install MicroK8s on macOS
+
+    brew install ubuntu/microk8s/microk8s
+    microk8s install
+
+2. Check the status while Kubernetes starts
+
+    microk8s status --wait-ready
+
+3. Turn on the services you want
+
+    microk8s enable dashboard
+    microk8s enable dns
+    microk8s enable registry
+    microk8s enable istio
+
+4. Start using Kubernetes
+
+    microk8s kubectl get all --all-namespaces
+
+    Note: You can use kubectl commands without writing microk8s before that by doing the following changes
+
+    - MicroK8s comes with its own kubectl command, which can be accessed like this:
+        microk8s kubectl
+
+    - Running the following command will output the kubeconfig file from MicroK8s:
+        microk8s config
+
+    - If you have not already configured kubectl on the host, you can just open a terminal and generate the required config :
+        cd $HOME
+        mkdir .kube
+        cd .kube
+        microk8s config > config
+
+
+    Note: If you have already configured other Kubernetes clusters, you should merge the output from the microk8s config with the existing config (copy the output, omitting the first two lines, and paste it onto the end of the existing config using a text editor).
+
+
+5. Access the Kubernetes dashboard
+
+    microk8s dashboard-proxy
+
+6. Start and stop Kubernetes to save battery
+    microk8s start
+    microk8s stop
+
