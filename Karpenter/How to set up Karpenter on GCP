@@ -1,0 +1,75 @@
+# Prerequisites Check
+# set up these things first before going ahead
+
+kubectl version --client
+helm version
+gcloud version
+
+# Check if you're connected to your GKE cluster
+kubectl cluster-info
+
+# Export the following variables
+PROJECT_ID="your gcp project id here"
+REGION="region of your GKE cluster"
+CLUSTER_NAME="your GKE cluster name"
+
+# now create a service account in karpenter namespace
+gcloud iam service-accounts create karpenter-gcp \
+    --description="Service account for Karpenter GCP provider" \
+    --display-name="Karpenter GCP" \
+    --project=${PROJECT_ID}
+
+# Assign roles to your service account
+SA_EMAIL="karpenter-gcp@${PROJECT_ID}.iam.gserviceaccount.com"
+
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+    --member="serviceAccount:${SA_EMAIL}" \
+    --role="roles/compute.admin"
+
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+    --member="serviceAccount:${SA_EMAIL}" \
+    --role="roles/container.admin" 
+
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+    --member="serviceAccount:${SA_EMAIL}" \
+    --role="roles/monitoring.admin"
+
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+    --member="serviceAccount:${SA_EMAIL}" \
+    --role="roles/iam.serviceAccountUser"
+
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+    --member="serviceAccount:${SA_EMAIL}" \
+    --role="roles/compute.instanceAdmin"
+
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+    --member="serviceAccount:${SA_EMAIL}" \
+    --role="roles/compute.viewer"
+
+# once the service account is created, download the json keyfile
+gcloud iam service-accounts keys create karpenter-gcp-key.json \
+    --iam-account=${SA_EMAIL}
+
+# create the secret so that karpenter deployment/pods could access the resources
+kubectl create secret generic karpenter-gcp-credentials \
+    --from-file=key.json=karpenter-gcp-key.json \
+    --namespace=karpenter 
+
+# Enable Required APIs:
+gcloud services enable compute.googleapis.com
+gcloud services enable container.googleapis.com
+
+# Real Set up from the repo
+# Go straight to the GCP provider
+git clone https://github.com/cloudpilot-ai/karpenter-provider-gcp.git
+cd karpenter-provider-gcp
+
+helm upgrade karpenter charts/karpenter --install \
+    --namespace karpenter --create-namespace \
+    --set "controller.settings.projectID=${PROJECT_ID}" \
+    --set "controller.settings.region=${REGION}" \
+    --set "controller.settings.clusterName=${CLUSTER_NAME}" \
+    --wait
+
+
+# Congratulation! you might have successfully installed Karpenter on GCP GKE.

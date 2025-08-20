@@ -1,0 +1,8 @@
+helm install myngixrelease helloworld
+helm uninstall myngixrelease
+helm list -a
+helm upgrade myngixrelease
+helm rollback myngixrelease 2
+helm install myngixrelease --debug --dry-run helloworld
+helm template helloworld
+helm lint helloworld
