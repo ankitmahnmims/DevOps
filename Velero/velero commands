@@ -1,0 +1,28 @@
+# check your default backup location for backup
+velero backup-location get
+
+#
+
+velero backup create <backup-name> \
+  --include-namespaces <namespace-name> \
+  --storage-location <backup-location> \
+  --ttl 72h0m0s
+
+#
+
+velero backup describe my-backup-2025 --details
+
+
+#
+
+velero backup logs my-backup-2025
+
+#
+velero backup create staging-backup \
+  --include-namespaces my-namespace \
+  --selector env=staging \
+  --default-volumes-to-fs-backup
+
+#
+velero schedule get
+

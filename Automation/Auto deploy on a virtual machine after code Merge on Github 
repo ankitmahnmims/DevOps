@@ -1,0 +1,105 @@
+AIM: This is an automation document to push your github code to a virtual machine or EC2 instance. 
+
+Description: When your application is running on a VM, you need to automate your CI/CD pipeline. When there is any event on github like push, your code should automatically be deployed on the server. Also you should be able to run custom commands in there to restart your server.
+
+STEP 1:
+
+# set up the VM for webhook (assuming you have an ubuntu system)
+sudo apt update 
+sudo apt-get install webhook
+
+# install python
+sudo apt install python3
+
+STEP 2:
+
+# login to your VM 
+
+Write a bash script where you can define the steps to pull the code:
+
+---
+
+#!/bin/bash
+
+# Reset and pull latest code from branch
+git reset --hard
+git pull origin <branch-name>
+
+# Run your commands after pull (in this example its a rails application)
+bundle install
+RAILS_ENV=production bundle exec rails assets:precompile
+sudo systemctl restart <server (nginx, apache2, etc)>
+sudo monit restart all
+sudo service sidekiq restart
+sudo service sidekiq_cron restart
+sudo service sidekiq_panna restart
+
+---
+
+STEP 3:
+
+# login to your vm where your code needs to pushed
+
+create a webhook.py file and paste this code:
+
+---
+from flask import Flask, request
+import subprocess
+import threading
+
+app = Flask(__name__)
+
+def deploy():
+    try:
+        subprocess.run(["git", "pull"], cwd="/<your code directory path>", check=True)
+        subprocess.run(["<script file location created in step 2>"], check=True)
+    except Exception as e:
+        print(f"Deployment error: {e}")
+
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    if request.method == "POST":
+        # Run the deploy function in a separate thread
+        threading.Thread(target=deploy).start()
+        return "Accepted", 200
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
+---
+
+Note: keeping host at 0.0.0.0 is important to communicate with github webhook and mention the port where webhook will be listening at.
+
+STEP 4:
+
+# now we need to create the webhook server 
+
+Navigate to /etc/systemd/system (ubuntu system) and create a file webhook.service
+Paste the following code
+
+---
+
+[Unit]
+Description=GitHub Webhook Listener
+After=network.target
+
+[Service]
+User=anuj
+Group=anuj
+ExecStart=/usr/bin/python3 /<path to the webhook file we created in step 3>webhook.py
+WorkingDirectory=<working directory path where your actual code is present>
+Restart=always
+Environment="PATH=/usr/bin"
+
+[Install]
+WantedBy=multi-user.target
+
+---
+
+Restart the webhook service:
+sudo systemctl restart webhook.service
+sudo systemctl enable webhook.service
+sudo systemctl status webhook.service
+
+Note: If webhook service status don't say "active", you can debug the issue further by running 
+"journalctl -u webhook.service -f"
+
