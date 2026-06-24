@@ -1,1 +1,164 @@
-hi
+# PG Access Management Dashboard
+
+A self-service web dashboard to manage PostgreSQL user roles and permissions across multiple GCP-hosted database servers — without writing SQL manually.
+
+---
+
+## What it does
+
+- Register multiple PostgreSQL servers (GCP or any host) from a single dashboard
+- Import and browse all existing roles/users from each server
+- Grant **SELECT** (read-only) or **SELECT + UPDATE** access to specific databases or tables
+- Set **time-bound access** — permissions are automatically revoked when they expire
+- Create new PostgreSQL roles with generated or custom passwords
+- Manage dashboard users with an allowlist (only approved users can log in)
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | React 19, Vite, React Router v6 |
+| Backend | Node.js, Express |
+| App Database | PostgreSQL |
+| Auth | JWT (username + password) |
+| Scheduling | node-cron (auto-revocation every 5 min) |
+| Deployment | Kubernetes (GCP) |
+
+---
+
+## Features
+
+### Server Management
+- Add PostgreSQL servers via direct connection string
+- Test connection before saving
+- Server credentials encrypted at rest (AES-256-GCM)
+- Sync and display all existing roles per server
+
+### Permission Grants
+- Grant access to **all tables** or **selected tables** in a database
+- Optional **UPDATE permission** (always requires an expiry date)
+- Time-bound access with automatic revocation via background cron job
+- Full grant history with granted-by tracking
+
+### User Management (Admin)
+- Create dashboard users with username + password
+- Block/unblock users without deleting them
+- Admin vs regular user roles
+
+### UI
+- Light and dark mode
+- Role search with autocomplete across all servers
+- Filter grants by server, database, or role/user name
+- Password generator (16 chars: a–z, A–Z, 0–9, `!`)
+
+---
+
+## Project Structure
+
+pg-access-management-dashboard/
+├── backend/
+│   ├── migrations/          # SQL schema files
+│   ├── src/
+│   │   ├── config/          # DB connection, migration runner
+│   │   ├── middleware/      # JWT auth
+│   │   ├── routes/          # auth, users, servers, grants
+│   │   ├── utils/           # AES encryption, role sync
+│   │   └── workers/         # Auto-revocation cron job
+│   └── .env.example
+└── frontend/
+└── src/
+├── api/             # Axios client
+├── components/      # Navbar, Modal, ProtectedRoute
+├── context/         # Auth context
+├── hooks/           # useTheme
+└── pages/           # Login, Servers, DatabaseView, Grants, Users
+
+
+
+---
+
+## Getting Started
+
+### Prerequisites
+- Node.js 18+
+- PostgreSQL (for the app's own data)
+
+### Backend
+
+```bash
+cd backend
+cp .env.example .env        # fill in your values
+npm install
+npm run migrate             # creates tables, seeds admin user
+npm run dev
+Frontend
+
+cd frontend
+cp .env.example .env
+npm install
+npm run dev
+Default login
+Username	Password
+admin	changeme
+Change the admin password immediately after first login.
+
+Environment Variables
+Backend (.env)
+Variable	Description
+APP_DB_*	App database connection
+JWT_SECRET	Random secret for signing login tokens
+ENCRYPTION_KEY	64-char hex key for encrypting stored server passwords
+PORT	Backend port (default 3001)
+FRONTEND_ORIGIN	CORS allowed origin
+Generate secrets:
+
+
+# JWT_SECRET
+openssl rand -base64 48
+
+# ENCRYPTION_KEY
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+⚠️ Never change ENCRYPTION_KEY after going live without migrating existing encrypted data.
+
+Frontend (.env)
+Variable	Description
+VITE_API_URL	Backend API base URL
+Production (Kubernetes)
+Store secrets in Kubernetes Secrets or GCP Secret Manager — never in files on the server.
+
+
+kubectl create secret generic pg-dashboard-secrets \
+  --from-literal=JWT_SECRET="..." \
+  --from-literal=ENCRYPTION_KEY="..."
+Reference in deployment YAML:
+
+
+env:
+  - name: JWT_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: pg-dashboard-secrets
+        key: JWT_SECRET
+  - name: ENCRYPTION_KEY
+    valueFrom:
+      secretKeyRef:
+        name: pg-dashboard-secrets
+        key: ENCRYPTION_KEY
+API Overview
+Method	Endpoint	Description
+POST	/api/auth/login	Login
+GET	/api/servers	List servers
+POST	/api/servers	Register server
+POST	/api/servers/test-connection	Test DB connection
+POST	/api/servers/:id/sync-roles	Import roles from server
+GET	/api/servers/:id/databases	List databases
+GET	/api/servers/:id/databases/:db/tables	List tables
+GET	/api/grants	List grants (filterable)
+POST	/api/grants	Create grant
+DELETE	/api/grants/:id	Revoke grant
+GET	/api/users	List dashboard users (admin)
+POST	/api/users	Create dashboard user (admin)
+
+
